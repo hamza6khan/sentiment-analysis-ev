@@ -1,0 +1,219 @@
+---
+title: "Sentiment Analysis on News Sources Regarding Electric Vehicles"
+author: "Hamza Khan"
+date: "2023-11-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) # default line for .rmd files
+```
+
+Libraries
+```{r message=FALSE, warning=FALSE}
+library(tidytext) # for sentiment analysis
+library(tidyverse) # for using read_csv, pipe, filter, ggplot2 and more
+```
+
+Reading data file
+```{r message=FALSE, warning=FALSE}
+setwd("C:/Users/Hamza/Desktop/FA2023/LING 460/sentiment-analysis-ev") # setting the working directory
+data <- read_csv("ling_460_project_data.csv") # reading the data file
+data1 <- data[, c(-1, -5, -6)] # removing unnecessary columns
+```
+
+Unnesting tokens
+```{r message=FALSE, warning=FALSE}
+data_unnested <- data1 %>% # creating a data frame named data_unnested from data1
+  unnest_tokens(word, text_article) %>%  # unnesting tokens
+  anti_join(stop_words) # removing stop words
+```
+
+BING Sentiment and recoding positive as 1, negative as 0
+```{r message=FALSE, warning=FALSE}
+data_bing <- data_unnested %>% # creating a data frame named data_bing from data_unnested
+  inner_join(get_sentiments("bing")) # using inner_join to match sentiments from the bing lexicon
+data_bing$score <- ifelse(data_bing$sentiment == "positive", 1, 0) # creating a new variable in the data frame which is the score variable regrades
+```
+
+Summarizing data by source_article, political_lean
+```{r message=FALSE, warning=FALSE}
+data_bing_source <- data_bing %>% # creating a new data frame from data_bing
+  group_by(source_article, political_lean) %>% # Grouping by source_article and bringing in political_lean variable
+  summarize(avg = mean(score)) # calculating the average for each source_article
+
+data_bing_source <- arrange(data_bing_source, desc(avg)) # sorting the data frame descending by average
+
+data_bing_lean <- data_bing %>% # creating a new data frame from data_bing
+  group_by(political_lean) %>% # Grouping by the political_lean variable
+  summarize(avg = mean(score)) # calculating the average for each source_article
+
+data_bing_lean <- arrange(data_bing_lean, desc(avg)) # sorting the data frame descending by average
+```
+
+Graphing data_bing_source and data_bing_lean
+  This revealed that left news sources have higher sentiment than news sources without a lean, and then right leaning news sources. Although it varies for sources in the middle and right.
+```{r message=FALSE, warning=FALSE}
+# creating bar graph for data_bing_source with legend and sorted by avg
+ggplot(data = data_bing_source, aes(reorder(source_article, avg), avg, fill = political_lean)) +
+  geom_col() + # bar chart
+  coord_flip() + # making it horizontal for legibility
+  ggtitle("Average Sentiment in Article by News Source") + # title
+  theme_minimal() + # theme
+  ylab("Average Sentiment (BING)") + # x-axis label (coord_flip is why this is x-axis)
+  xlab("News Source") + # y-axis label (coord_flip is why this is y-axis)
+  scale_y_continuous(limits = c(0,1)) + # setting scales for x-axis (coord flipped)
+  geom_hline(yintercept = .5, linetype='dotted', col = 'red') + # creating a vertical line at the .5 mark (coord flipped)
+  scale_fill_discrete(name = "Political Lean") + # labeling legend
+  scale_fill_manual(values=c("blue", "gray", "red")) # setting colors
+
+# creating bar graph for data_bing_lean with legend and sorted by avg
+ggplot(data = data_bing_lean, aes(reorder(political_lean, avg), avg, fill = political_lean)) +
+  geom_col() + # bar chart
+  coord_flip() + # making it horizontal for legibility
+  ggtitle("Average Sentiment by Political Lean of News Source") + # title
+  theme_minimal() + # theme
+  ylab("Average Sentiment (BING)") + # x-axis label (coord_flip is why this is x-axis)
+  xlab("Political Lean") + # y-axis label (coord_flip is why this is y-axis)
+  scale_y_continuous(limits = c(0,1)) + # setting scales for x-axis (coord flipped)
+  geom_hline(yintercept = .5, linetype='dotted', col = 'red') + # creating a vertical line at the .5 mark (coord flipped)
+  scale_fill_discrete(name = "Political Lean") + # labeling legend
+  scale_fill_manual(values=c("blue", "gray", "red")) # setting colors
+```
+
+Three separate dataframes, one for each political lean
+```{r message=FALSE, warning=FALSE}
+left <- filter(data_bing, political_lean == "left") # filtering data_bing where political_lean is left
+middle <- filter(data_bing, political_lean == "middle") # filtering data_bing where political_lean is middle
+right <- filter(data_bing, political_lean == "right") # filtering data_bing where political_lean is right
+```
+
+T-test (welch due to difference in sample sizes)
+  - H0: There are no differences in sentiment between news sources of different political leans
+  - HA: There are differences in sentiment between news sources of different political leans
+  
+  - Left and Right: lowest p-value indicating that different political leans have differences in sentiment
+  - Left and Middle: low p-value indicating that different political leans have differences in sentiment
+  - Middle and Right: high p-value (above 0.05) indicating that different political leans don't have differences in sentiment
+```{r message=FALSE, warning=FALSE}
+t.test(left$score, right$score) # calculating t-test for the left and right columns
+t.test(left$score, middle$score) # calculating t-test for the left and middle columns
+t.test(middle$score, right$score) # calculating t-test for the middle and right columns
+```
+
+Creating dummy variable in data_bing_source to use in making glm
+  I made three dummy variables instead of two for the glm, otherwise I would have done two.
+```{r message=FALSE, warning=FALSE}
+data_bing_source$left <- ifelse(data_bing_source$political_lean == "left", 1, 0) # creating a column in the data_bing_source data frame named left that is one if the political_lean is left and 0 otherwise
+data_bing_source$right <- ifelse(data_bing_source$political_lean == "right", 1, 0) # creating a column in the data_bing_source data frame named right that is one if the political_lean is right and 0 otherwise
+data_bing_source$middle <- ifelse(data_bing_source$political_lean == "middle", 1, 0) # creating a column in the data_bing_source data frame named middle that is one if the political_lean is middle and 0 otherwise
+```
+
+Logistic regression
+```{r message=FALSE, warning=FALSE}
+summary(glm(left~avg, data = data_bing_source)) # low p-values # looking at the summary for the logistic regression between left and avg variables
+summary(glm(right~avg, data = data_bing_source)) # not good # looking at the summary for the logistic regression between right and avg variables
+summary(glm(middle~avg, data = data_bing_source)) # even worse # looking at the summary for the logistic regression between middle and avg variables
+```
+
+###################################################################
+## ## Going to do the same thing again with the AFINN lexicon ## ##
+###################################################################
+
+AFINN sentiment
+```{r message=FALSE, warning=FALSE}
+data_afinn <- data_unnested %>%  # creating a data frame named data_afinn from data_unnested
+  inner_join(get_sentiments("afinn")) # using inner_join to match sentiments from the afinn lexicon
+```
+
+Summarizing data from afinn sentiment
+```{r message=FALSE, warning=FALSE}
+data_afinn_source <- data_afinn %>% # creating a new data frame from data_afinn
+  group_by(source_article, political_lean) %>% # Grouping by source_article and bringing in political_lean variable
+  summarize(avg = mean(value)) # calculating the average for each source_article
+
+data_afinn_source <- arrange(data_afinn_source, desc(avg)) # sorting the data frame descending by average
+
+data_afinn_lean <- data_afinn %>% # creating a new data frame from data_afinn
+  group_by(political_lean) %>% # Grouping by the political_lean variable
+  summarize(avg = mean(value)) # calculating the average for each source_article
+
+data_afinn_lean <- arrange(data_afinn_lean, desc(avg)) # sorting the data frame descending by average
+```
+
+Creating bar graphs
+```{r message=FALSE, warning=FALSE}
+# creating bar graph for data_afinn_source with legend and sorted by avg
+ggplot(data = data_afinn_source, aes(reorder(source_article, avg), avg, fill = political_lean)) +
+  geom_col() + # bar chart
+  coord_flip() + # making it horizontal for legibility
+  ggtitle("Average Sentiment in Article by News Source") + # title
+  theme_minimal() + # theme
+  ylab("Average Sentiment (AFINN)") + # x-axis label (coord_flip is why this is x-axis)
+  xlab("News Source") + # y-axis label (coord_flip is why this is y-axis)
+  scale_y_continuous(limits = c(-1,1)) + # setting scales for x-axis (coord flipped)
+  scale_fill_discrete(name = "Political Lean") + # renaming legend
+  scale_fill_manual(values=c("blue", "gray", "red")) # setting colors
+# ggsave("pic1.jpg") # saving the output as jpg
+
+# creating bar graph for data_afinn_lean with legend and sorted by avg
+ggplot(data = data_afinn_lean, aes(reorder(political_lean, avg), avg, fill = political_lean)) +
+  geom_col() + # bar chart
+  coord_flip() + # making it horizontal for legibility
+  ggtitle("Average Sentiment by Political Lean of News Source") + # title
+  theme_minimal() + # theme
+  ylab("Average Sentiment (AFINN)") + # x-axis label (coord_flip is why this is x-axis)
+  xlab("Political Lean") + # y-axis label (coord_flip is why this is y-axis)
+  scale_y_continuous(limits = c(-1,1)) + # setting scales for x-axis (coord flipped)
+  scale_fill_manual(values=c("blue", "gray", "red")) + # setting colors
+  theme(legend.position="none") # hiding legend
+# ggsave("pic2.jpg") # saving the output as jpg
+```
+
+Creating new data frames for each lean with afinn lexicon
+```{r message=FALSE, warning=FALSE}
+left_afinn <- filter(data_afinn, political_lean == "left") # filtering data_afinn where political_lean is left
+middle_afinn <- filter(data_afinn, political_lean == "middle") # filtering data_afinn where political_lean is left
+right_afinn <- filter(data_afinn, political_lean == "right") # filtering data_afinn where political_lean is left
+```
+
+T-tests
+```{r message=FALSE, warning=FALSE}
+t.test(left_afinn$value, right_afinn$value) # lowest p-value  # calculating t-test for the left and right columns
+t.test(left_afinn$value, middle_afinn$value) # low p-value  # calculating t-test for the left and middle columns
+t.test(middle_afinn$value, right_afinn$value) # just above .05  # calculating t-test for the middle and right columns
+```
+
+Creating dummy variables for glm (making 3 instead of 2 because of glm)
+```{r message=FALSE, warning=FALSE}
+data_afinn_source$left <- ifelse(data_afinn_source$political_lean == "left", 1, 0) # creating a column in the data_afinn_source data frame named left that is one if the political_lean is left and 0 otherwise
+data_afinn_source$right <- ifelse(data_afinn_source$political_lean == "right", 1, 0) # creating a column in the data_afinn_source data frame named right that is one if the political_lean is right and 0 otherwise
+data_afinn_source$middle <- ifelse(data_afinn_source$political_lean == "middle", 1, 0) # creating a column in the data_afinn_source data frame named middle that is one if the political_lean is middle and 0 otherwise
+```
+
+Logistic regression
+```{r message=FALSE, warning=FALSE}
+mod1glm <- glm(left~avg, data = data_afinn_source)
+summary(mod1glm) # low p-value # looking at the summary for the logistic regression between left and avg variables
+summary(glm(right~avg, data = data_afinn_source)) # barely low p-value # looking at the summary for the logistic regression between right and avg variables
+summary(glm(middle~avg, data = data_afinn_source)) # bad p-values # looking at the summary for the logistic regression between middle and avg variables
+```
+
+Plotting mod1glm
+```{r message=FALSE, warning=FALSE}
+# Creating a scatter plot with a curve for glmmod1
+ggplot(data_afinn_source, aes(x = avg, y = left)) + 
+  geom_point() + # scatter plot
+  stat_smooth(method = "glm", color = "red", se = FALSE, method.args = list(family = binomial)) #curve
+```
+
+Predict our results back on our original data and check for accuracy
+  - It predicted 5 left and 4 not left
+  - The not lefts are predicted correctly to not be left
+  - All the lefts are predicted to be left, however, 2 extra are predicted to be left when they aren't
+```{r message=FALSE, warning=FALSE}
+mod1glm_pred <- predict(mod1glm, data_afinn_source)
+mod1glm_pred
+data_afinn_source$avg
+```
+
