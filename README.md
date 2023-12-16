@@ -24,6 +24,8 @@ Through comparing average sentiments and utilizing Welch's t-tests, we were able
 * Right-leaning news sources are the most negative regarding electric vehicles
 * Center-leaning news sources vary in sentiment, but are mainly neutral
 
-These bar charts from our EDA visualize just that
+These bar charts from our EDA visualize just that:
+
 ![](https://github.com/hamza6khan/sentiment-analysis-ev/blob/main/avg_sentiment_lean.jpg)
+
 ![](https://github.com/hamza6khan/sentiment-analysis-ev/blob/main/avg_sentiment_news_source.jpg)
